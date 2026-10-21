@@ -51,7 +51,9 @@ class Fact:
             raise ValueError(f"fact key {self.key!r} may only use letters, digits and _ . : -")
         if self.kind not in KINDS:
             raise ValueError(f"fact kind must be one of {', '.join(KINDS)}, not {self.kind!r}")
-        numeric = isinstance(self.value, (int, float)) and not isinstance(self.value, bool)
+        if self.value is None or isinstance(self.value, bool):
+            raise TypeError(f"fact {self.key!r} needs a number or text value, not {self.value!r}")
+        numeric = isinstance(self.value, (int, float))
         if self.kind != "text" and not numeric:
             raise TypeError(f"fact {self.key!r} is {self.kind}, so its value must be a number")
 
@@ -106,7 +108,8 @@ class Formatter:
             return short
         if decimals is not None:
             return f"{x:,.{decimals}f}"
-        if x.is_integer() or abs(x) >= 100:
+        # Decide on the rounded value so 99.999 renders as "100", not "100.00".
+        if round(x, 2).is_integer() or abs(x) >= 100:
             return f"{x:,.0f}"
         return f"{x:,.2f}"
 
@@ -178,17 +181,23 @@ class Facts:
         return self.formatter(self[fact] if isinstance(fact, str) else fact)
 
     def strip_currency(self, text: str) -> str:
-        """Drop a currency the model typed before a money placeholder: "INR {{fact:spend}}"."""
+        """Drop a currency the model typed before a money placeholder: "INR {{fact:spend}}".
+
+        Only when the fact renders a currency of its own, so "${{fact:spend}}" keeps
+        its "$" if no currency was configured."""
 
         def fix(m: re.Match[str]) -> str:
             fact = self.get(m["key"])
             typed = m["code"] or m["symbol"]
             known = typed in CURRENCIES or typed.startswith("Rs") or m["symbol"] is not None
-            if fact is not None and fact.kind == "money" and known:
+            if fact is not None and fact.kind == "money" and known and self._currency(fact):
                 return m["placeholder"]
             return m[0]
 
         return _TYPED_CURRENCY.sub(fix, text)
+
+    def _currency(self, fact: Fact) -> str | None:
+        return fact.currency or getattr(self.formatter, "currency", None)
 
     def render(self, text: str) -> str:
         """Replace every placeholder with its formatted value. Unknown keys raise KeyError,

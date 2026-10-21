@@ -37,6 +37,12 @@ class Result:
         return not self.dropped
 
 
+def _reusable(rules: dict[str, Any]) -> dict[str, Any]:
+    # validate() runs several times with the same rules; a generator passed as
+    # windows or allow would be used up by the first call.
+    return {k: tuple(v) if k in ("windows", "allow") else v for k, v in rules.items()}
+
+
 def _finish(draft: str, report: Report, facts: Facts, attempts: int, rules: dict[str, Any]) -> Result:
     if report.ok:
         return Result(facts.render(draft), draft, attempts, (), ())
@@ -67,6 +73,7 @@ def guard(
 
     rules are passed to validate(): windows, user_text, allow, number_words, ...
     """
+    rules = _reusable(rules)
     retry = None
     attempts = 0
     while True:
@@ -86,6 +93,7 @@ async def aguard(
     **rules: Any,
 ) -> Result:
     """guard() for an async generate function."""
+    rules = _reusable(rules)
     retry = None
     attempts = 0
     while True:
@@ -113,7 +121,7 @@ class StreamGuard:
 
     def __init__(self, facts: Facts, **rules: Any) -> None:
         self.facts = facts
-        self.rules = rules
+        self.rules = _reusable(rules)
         self.dropped: list[str] = []
         self.violations: list[Violation] = []
         self._buffer = ""

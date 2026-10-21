@@ -14,10 +14,12 @@ from .validate import Window, validate
 
 def _window(value: str) -> Window:
     try:
-        start, end = value.split(":")
-        return date.fromisoformat(start), date.fromisoformat(end)
+        start, end = (date.fromisoformat(part) for part in value.split(":"))
     except ValueError:
         raise argparse.ArgumentTypeError(f"expected START:END as ISO dates, got {value!r}") from None
+    if start > end:
+        raise argparse.ArgumentTypeError(f"window starts after it ends: {value!r}")
+    return start, end
 
 
 def _read(path: str) -> str:
@@ -48,8 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     render.add_argument("--facts", required=True, help="JSON file with the facts")
 
     args = parser.parse_args(argv)
-    facts = Facts.from_records(json.loads(_read(args.facts)))
-    text = _read(args.draft)
+    try:
+        facts = Facts.from_records(json.loads(_read(args.facts)))
+        text = _read(args.draft)
+    except (OSError, ValueError, TypeError, KeyError) as e:
+        print(f"factguard: {e}", file=sys.stderr)
+        return 2
 
     if args.command == "render":
         try:

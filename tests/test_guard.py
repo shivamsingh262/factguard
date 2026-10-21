@@ -109,3 +109,13 @@ def test_assert_grounded(facts):
     assert assert_grounded("Spend {{fact:spend}}.", facts).ok
     with pytest.raises(AssertionError, match="40%"):
         assert_grounded("Spend up 40%.", facts)
+
+
+def test_generator_rules_survive_retries(facts):
+    window = (date(2026, 9, 1), date(2026, 9, 28))
+    generate, _ = scripted("Since Sep 3 spend was 40%.", "Since Sep 3 spend was {{fact:spend}}.")
+    result = guard(generate, facts, windows=(w for w in [window]))
+    assert result.text == "Since Sep 3 spend was INR 60K."
+    sg = StreamGuard(facts, windows=(w for w in [window]))
+    assert sg.feed("Since Sep 3 it held. ") == []
+    assert sg.feed("Since Sep 3 it held. ") == ["Since Sep 3 it held. "]

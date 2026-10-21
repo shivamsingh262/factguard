@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from factguard.cli import main
 
 
@@ -42,3 +44,18 @@ def test_render_unknown(tmp_path, capsys):
     facts, draft = write(tmp_path, "{{fact:nope}}")
     assert main(["render", draft, "--facts", facts]) == 1
     assert "nope" in capsys.readouterr().err
+
+
+def test_bad_facts_file_is_reported_without_a_traceback(tmp_path, capsys):
+    _, draft = write(tmp_path, "hi")
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"spend": ')
+    assert main(["check", draft, "--facts", str(bad)]) == 2
+    assert capsys.readouterr().err.startswith("factguard: ")
+
+
+def test_reversed_window_is_rejected(tmp_path, capsys):
+    facts, draft = write(tmp_path, "hi")
+    with pytest.raises(SystemExit):
+        main(["check", draft, "--facts", facts, "--window", "2026-09-28:2026-09-01"])
+    assert "starts after it ends" in capsys.readouterr().err
