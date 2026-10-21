@@ -44,6 +44,7 @@ facts.add("spend", 61_240, "money", label="Ad spend this week")
 facts.add("roas", 1.8, "ratio", label="ROAS this week")
 facts.add("roas_prev", 2.4, "ratio", label="ROAS last week")
 
+question = "Why did ROAS drop?"
 system_prompt = facts.prompt()   # the rules, plus "- {{fact:spend}} = INR 61.2K (...)"
 
 def generate(retry):
@@ -51,15 +52,60 @@ def generate(retry):
     ...
 
 week = (date(2026, 9, 22), date(2026, 9, 28))
-result = guard(generate, facts, windows=[week], user_text="Why did ROAS drop?")
+result = guard(generate, facts, windows=[week], user_text=question)
 
 result.text      # "ROAS fell from 2.4x to 1.8x while spend held at INR 61.2K."
 result.dropped   # sentences removed because they still broke the rules
 result.attempts  # 1 or 2
 ```
 
-[`examples/anthropic_analyst.py`](examples/anthropic_analyst.py) is a complete
-example using Claude.
+## Using it with an LLM SDK
+
+`generate` is the only part that touches your SDK. On the first call `retry` is
+`None`. On a retry, send the failed draft back as the model's own turn and the
+feedback as the next user turn, so the model fixes the named tokens instead of
+writing a new answer:
+
+```python
+import anthropic
+
+client = anthropic.Anthropic()
+
+def generate(retry):
+    messages = [{"role": "user", "content": question}]
+    if retry:
+        messages += [
+            {"role": "assistant", "content": retry.draft},
+            {"role": "user", "content": retry.feedback},
+        ]
+    response = client.messages.create(
+        model="claude-opus-5-5",
+        max_tokens=16000,
+        system=system_prompt,
+        messages=messages,
+    )
+    return "".join(block.text for block in response.content if block.type == "text")
+```
+
+`retry.feedback` names each offending token, for example:
+
+```text
+Your draft broke the rule that every number must come from a fact placeholder.
+Fix only these and keep the rest of the draft as it is:
+- `40%`: this is a number you typed. Cite it with a {{fact:...}} placeholder, or say it without the figure.
+```
+
+When an answer compares two periods, state both in the system prompt and pass
+both as `windows`, so dates from either one are allowed:
+
+```python
+this_week = (date(2026, 9, 22), date(2026, 9, 28))
+last_week = (date(2026, 9, 15), date(2026, 9, 21))
+result = guard(generate, facts, windows=[this_week, last_week], user_text=question)
+```
+
+[`examples/anthropic_analyst.py`](examples/anthropic_analyst.py) is the complete
+script, with more facts and refusal handling.
 
 ## What counts as a violation
 
@@ -81,29 +127,52 @@ Allowed without a fact:
   repeat the 2 (or `2x`). Dates the user typed still have to fall inside a window.
 - your own patterns: `allow=[r"SKU-\d+"]`
 
+To be stricter, turn the built-in allowances off with `list_markers=False`,
+`attribution_labels=False` or `terms=False`.
+
 Without `windows`, every date and duration fails. That is deliberate: the
 model shouldn't do date arithmetic. Resolve "last month" in code and pass the
 window you actually queried. Pass both windows when you compare two periods.
+
+How dates are matched against windows:
+
+- A date without a year (`Sep 22`) passes if it falls inside a window in any of
+  the windows' years.
+- A month with a year (`September 2026`) passes if it overlaps a window. A
+  year on its own passes if a window covers it.
+- `N days` and `N weeks` must equal a window's length exactly, counting both
+  end dates. `N months` may be off by up to 3 days, since months vary.
 
 ## The pieces
 
 **`Facts`** holds the facts for one answer.
 
 - `facts.add(key, value, kind, label=..., currency=..., decimals=..., source=..., step=...)`
-- `facts.prompt()` returns the citation rules and fact list for your system prompt.
+- `facts.prompt()` returns the citation rules and fact list for your system prompt. Pass `rules=False` to get just
+  the fact list and write your own rules.
 - `facts.render(text)` replaces placeholders with formatted values. It also strips a currency the model typed in
-  front of a money placeholder (`INR {{fact:spend}}`) when the fact brings its own.
-- `Facts.from_records(json_data)` loads facts from JSON.
+  front of a money placeholder (`INR {{fact:spend}}`) when the fact brings its own. An unknown key raises
+  `KeyError`, so validate before you render. `guard()` does both for you.
+- `Facts.from_records(json_data)` loads facts from JSON (see [The facts file](#the-facts-file)).
 
 Formats: `money` renders as `INR 61.2K` or `$1.2M` (pass `Formatter(compact=False)` for `61,240`). `percent` takes
-fractions, so `0.034` renders as `3.4%`. `count` renders as `12,480`, `ratio` as `2.3x`, and `text` as-is. To use
-your own formatting, pass any `Callable[[Fact], str]` as `formatter=`.
+fractions, so `0.034` renders as `3.4%`. `count` renders as `12,480`, `ratio` as `2.3x`, and `text` as-is. `number`,
+the default kind, renders whole numbers as `12,480` and others with two decimals. To use your own formatting, pass
+any `Callable[[Fact], str]` as `formatter=`.
 
 **`validate(text, facts, **rules)`** returns a `Report` with `.ok`, `.violations` (kind, token, start, end) and
 `.feedback`, a retry message that names each offending token.
 
 **`guard(generate, facts, retries=1, **rules)`** runs the whole loop. `generate(None)` should return a first draft,
-and `generate(retry)` a corrected one. Use `aguard` for async code.
+and `generate(retry)` a corrected one. Use `aguard` for async code. It returns a `Result`:
+
+- `text`: the answer with placeholders replaced by formatted values
+- `raw`: the same answer with placeholders kept. Store this one if you want to audit which fact each figure came
+  from, or render it again later.
+- `attempts`: how many times `generate` was called
+- `dropped`: sentences removed because they still broke the rules
+- `violations`: what the last draft got wrong
+- `clean`: `True` when nothing was dropped
 
 **`StreamGuard(facts, **rules)`** checks streamed text one sentence at a time. A sentence already on screen can't
 be rewritten, so a failing sentence is dropped instead of retried:
@@ -115,6 +184,8 @@ for chunk in llm_stream:
         ui.append(sentence)
 for sentence in sg.close():
     ui.append(sentence)
+
+log(sg.dropped, sg.violations)   # what was held back, and why
 ```
 
 **Evals.** Check every recorded answer for zero ungrounded numbers, not just for the right answer:
@@ -132,6 +203,35 @@ Or from the shell or CI:
 factguard check answer.txt --facts facts.json --window 2026-09-22:2026-09-28
 factguard render answer.txt --facts facts.json
 ```
+
+`check` prints one line per violation (`answer.txt:3: literal_number: ...`) and exits with `0` when the answer is
+clean, `1` when it has violations, and `2` when an input file can't be read or parsed. Other options:
+
+- `--window START:END` can be repeated, once for each period the answer compares.
+- `--user "Why did ROAS drop?"` lets numbers from the question be repeated.
+- `--number-words` also flags words like "doubled".
+- `--json` prints the violations as JSON.
+- Use `-` in place of the answer file to read it from stdin.
+
+### The facts file
+
+`--facts` and `Facts.from_records` take any of these shapes:
+
+```json
+{
+  "currency": "INR",
+  "facts": [
+    {"key": "spend", "value": 61240, "kind": "money", "label": "Ad spend this week"},
+    {"key": "roas", "value": 1.8, "kind": "ratio", "label": "ROAS this week"}
+  ]
+}
+```
+
+- a list of fact objects without the `currency` wrapper
+- a flat map, `{"spend": 61240, "top_ad": "Summer UGC v3"}`
+
+Each fact object takes the same fields as `facts.add()`. When `kind` is missing, a number becomes `number` and
+anything else becomes `text`.
 
 ## Trade-offs
 
