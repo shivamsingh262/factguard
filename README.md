@@ -1,6 +1,7 @@
 # factguard
 
 [![CI](https://github.com/shivamsingh262/factguard/actions/workflows/ci.yml/badge.svg)](https://github.com/shivamsingh262/factguard/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/factguard)](https://pypi.org/project/factguard/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![No dependencies](https://img.shields.io/badge/dependencies-none-brightgreen)
@@ -29,7 +30,7 @@ from a production AI analyst for marketing teams; the write-up is
 ## Install
 
 ```sh
-pip install git+https://github.com/shivamsingh262/factguard
+pip install factguard
 ```
 
 ## Quick start
