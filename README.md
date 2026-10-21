@@ -25,7 +25,7 @@ number, the LLM only interprets.**
 
 It works with any LLM and any SDK, and has no dependencies. The design comes
 from a production AI analyst for marketing teams; the write-up is
-[Stopping an LLM from making up numbers in an AI analyst](https://shivamsingh262.github.io/notes/code-computes-llm-interprets/).
+[Stopping an LLM from making up numbers in an AI analyst](https://shivamsingh262.com/notes/code-computes-llm-interprets/).
 
 ## Install
 
