@@ -101,3 +101,22 @@ def test_prompt_lists_facts_with_rules():
     assert "Every number in your answer" in prompt
     assert "- {{fact:spend}} = INR 60K (Ad spend, money, meta_ads)" in prompt
     assert facts.prompt(rules=False).startswith("Facts:")
+
+
+def test_typed_currency_is_kept_when_the_fact_has_none():
+    facts = Facts()
+    facts.add("spend", 60_000, "money")
+    assert facts.render("Spend was ${{fact:spend}}.") == "Spend was $60K."
+    facts = Facts()
+    facts.add("spend", 60_000, "money", currency="USD")
+    assert facts.render("Spend was ${{fact:spend}}.") == "Spend was USD 60K."
+
+
+@pytest.mark.parametrize("value", [None, True])
+def test_value_must_be_a_number_or_text(value):
+    with pytest.raises(TypeError, match="needs a number or text value"):
+        Facts.from_records({"a": value})
+
+
+def test_money_rounding_up_to_a_whole_amount():
+    assert Formatter()(Fact("a", 99.999, "money")) == "100"

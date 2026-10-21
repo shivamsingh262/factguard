@@ -8,12 +8,12 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from .facts import PLACEHOLDER, Facts
+from .facts import CURRENCIES, PLACEHOLDER, Facts
 
 Window = tuple[date, date]
 
 _MALFORMED = re.compile(r"\{\{[^{}]*\}\}|\{fact:[^{}]*\}")
-_LIST_MARKER = re.compile(r"(?m)^[ \t]*(?:[-*•][ \t]+)?\d{1,3}[.)](?=\s)")
+_LIST_MARKER = re.compile(r"(?m)^[ \t]*(?:[-*•][ \t]+)?(?P<n>\d{1,3})[.)](?=\s)")
 # Names and words that contain digits but state no quantity.
 _TERMS = re.compile(r"(?i)\b(?:GA4|GA360|B2B|B2C|D2C|C2C|P2P|24/7|[123](?:st|nd|rd)[- ]party|H\.26[45])\b")
 _ATTRIBUTION = re.compile(r"(?i)\b\d{1,2}[- ]?(?:days?|d)[- ](?:click|view)s?\b")
@@ -30,7 +30,9 @@ _DATES = [
     re.compile(r"\b" + _DAY + r"\s+" + _MONTH + r"(?![A-Za-z])" + _YEAR),
 ]
 _MONTH_YEAR = re.compile(r"\b" + _MONTH + r",?\s+(?P<year>(?:19|20)\d{2})\b")
-_YEAR_ONLY = re.compile(r"\b(?:19|20)\d{2}\b")
+# Not "$2026", "2026%", "2026.5" or "2,026": those are amounts, not years.
+_YEAR_ONLY = re.compile(r"(?<![\d$€£₹¥.,])\b(?:19|20)\d{2}\b(?![.,]\d|%|(?i:x|k|mn?|bn?)\b)")
+_CURRENCY_BEFORE = re.compile(r"\b(?:" + "|".join(sorted(CURRENCIES)) + r"|Rs\.?)\s?$")
 _DURATION = re.compile(r"(?i)\b(?P<n>\d+)[- ]?(?P<unit>day|week|month)s?\b")
 
 _TOKEN = re.compile(r"\S*\d\S*")
@@ -92,13 +94,15 @@ def _month_number(name: str) -> int:
     return [m.lower() for m in calendar.month_abbr].index(name[:3].lower())
 
 
-def _value(token: str) -> float | None:
+def _value(token: str) -> tuple[float, str] | None:
+    """The value and unit of a token: "$1.5k" -> (1500.0, ""), "40%" -> (40.0, "%")."""
     m = _NUMBER.match(token)
     if not m:
         return None
-    x = float(m["num"].replace(",", ""))
-    x *= _MULTIPLIER.get((m["suffix"] or "").lower(), 1)
-    return -x if m["sign"] == "-" else x
+    suffix = (m["suffix"] or "").lower()
+    x = float(m["num"].replace(",", "")) * _MULTIPLIER.get(suffix, 1)
+    unit = suffix if suffix in ("%", "x") else ""
+    return (-x if m["sign"] == "-" else x), unit
 
 
 def _strip(token: str) -> tuple[str, int]:
@@ -148,16 +152,22 @@ def validate(
         t.blank(start, end)
 
     for m in PLACEHOLDER.finditer(text):
-        if m[1] in facts:
-            t.blank(*m.span())
+        start, end = m.span()
+        # "{{{fact:spend}}}" would render as "{60K}".
+        lo = start - 1 if text[start - 1 : start] == "{" else start
+        hi = end + 1 if text[end : end + 1] == "}" else end
+        if (lo, hi) != (start, end):
+            flag("malformed_placeholder", lo, hi, "write placeholders exactly as {{fact:key}}.")
+        elif m[1] in facts:
+            t.blank(start, end)
         else:
-            flag("unknown_fact", *m.span(), f"`{m[1]}` is not a known fact key. Use only keys from the fact list.")
+            flag("unknown_fact", start, end, f"`{m[1]}` is not a known fact key. Use only keys from the fact list.")
     for m in _MALFORMED.finditer(t.masked):
         flag("malformed_placeholder", *m.span(), "write placeholders exactly as {{fact:key}}.")
 
     patterns = [re.compile(p) if isinstance(p, str) else p for p in allow]
     if list_markers:
-        patterns.append(_LIST_MARKER)
+        _allow_list_markers(t)
     if attribution_labels:
         patterns.append(_ATTRIBUTION)
     if terms:
@@ -175,7 +185,9 @@ def validate(
             continue
         start = m.start() + cut
         value = _value(token)
-        if token in allowed or (value is not None and value in allowed):
+        # A bare number the user typed may come back with a unit ("below 2" -> "2x"),
+        # but "10%" and "10x" are different numbers.
+        if token in allowed or (value is not None and (value in allowed or (value[0], "") in allowed)):
             continue
         flag(
             "literal_number",
@@ -191,8 +203,19 @@ def validate(
     return Report(text, tuple(sorted(found, key=lambda v: v.start)))
 
 
-def _numbers(user_text: str) -> set[str | float]:
-    out: set[str | float] = set()
+def _allow_list_markers(t: _Text) -> None:
+    """Blank "1." and "2)" list markers. A marker must start the text, be 1, or follow
+    the marker before it, so a wrapped line like "Clicks were\n150. That..." still fails."""
+    seen: set[int] = set()
+    for m in _LIST_MARKER.finditer(t.masked):
+        n = int(m["n"])
+        if m.start() == 0 or n == 1 or n - 1 in seen:
+            t.blank(*m.span())
+            seen.add(n)
+
+
+def _numbers(user_text: str) -> set[str | tuple[float, str]]:
+    out: set[str | tuple[float, str]] = set()
     for m in _TOKEN.finditer(user_text):
         token, _ = _strip(m[0])
         out.add(token)
@@ -238,6 +261,8 @@ def _check_dates(t: _Text, windows: tuple[Window, ...], flag) -> None:
         judge(m, any(a <= last and b >= first for a, b in windows))
 
     for m in _YEAR_ONLY.finditer(t.masked):
+        if _CURRENCY_BEFORE.search(t.masked, 0, m.start()):
+            continue  # "INR 2026" is an amount; the number check flags it
         judge(m, any(a.year <= int(m[0]) <= b.year for a, b in windows))
 
     lengths = [(b - a).days + 1 for a, b in windows]

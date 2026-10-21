@@ -78,7 +78,7 @@ Allowed without a fact:
 - attribution labels (`7-day click`, `1-day view`)
 - names like `GA4`, `B2B`, `3rd-party` and `24/7`
 - numbers the user typed (`user_text`), so "campaigns with ROAS below 2" can
-  repeat the 2
+  repeat the 2 (or `2x`). Dates the user typed still have to fall inside a window.
 - your own patterns: `allow=[r"SKU-\d+"]`
 
 Without `windows`, every date and duration fails. That is deliberate: the
@@ -92,7 +92,7 @@ window you actually queried. Pass both windows when you compare two periods.
 - `facts.add(key, value, kind, label=..., currency=..., decimals=..., source=..., step=...)`
 - `facts.prompt()` returns the citation rules and fact list for your system prompt.
 - `facts.render(text)` replaces placeholders with formatted values. It also strips a currency the model typed in
-  front of a money placeholder (`INR {{fact:spend}}`), since the fact brings its own.
+  front of a money placeholder (`INR {{fact:spend}}`) when the fact brings its own.
 - `Facts.from_records(json_data)` loads facts from JSON.
 
 Formats: `money` renders as `INR 61.2K` or `$1.2M` (pass `Formatter(compact=False)` for `61,240`). `percent` takes

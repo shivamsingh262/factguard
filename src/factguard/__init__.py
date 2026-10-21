@@ -8,7 +8,7 @@ from .guard import Result, Retry, StreamGuard, aguard, guard
 from .sentences import drop_sentences, split_sentences
 from .validate import Report, Violation, Window, validate
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 __all__ = [
     "RULES",

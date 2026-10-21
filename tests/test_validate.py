@@ -133,3 +133,33 @@ def test_common_terms_are_allowed(facts):
         ("literal_number", "B2B"),
         ("literal_number", "24/7"),
     ]
+
+
+@pytest.mark.parametrize("phrase", ["2026 percent: 2026%", "$2026", "INR 2026", "2026.5", "2,026", "2026x", "2026k"])
+def test_amounts_shaped_like_a_year_in_the_window_fail(facts, phrase):
+    report = validate(f"Spend was {phrase}.", facts, windows=[SEPT])
+    assert not report.ok
+    assert all(v.kind == "literal_number" for v in report.violations)
+
+
+def test_year_at_sentence_end_is_still_a_year(facts):
+    assert validate("Spend fell in 2026.", facts, windows=[SEPT]).ok
+
+
+def test_user_units_must_match(facts):
+    assert validate("CTR rose 10%.", facts, user_text="CTR above 10%").ok
+    assert validate("ROAS 10x.", facts, user_text="top 10 campaigns").ok
+    assert kinds(validate("ROAS 10x.", facts, user_text="CTR above 10%")) == [("literal_number", "10x")]
+
+
+def test_wrapped_number_is_not_a_list_marker(facts):
+    assert kinds(validate("Clicks were\n150. That is all.", facts)) == [("literal_number", "150")]
+    assert validate("Top campaigns\n1. Brand\n2. Search\n\nThen:\n3. Display\n", facts).ok
+    # A streamed piece starts with its marker and has no earlier lines to check against.
+    assert validate("4. Display", facts).ok
+
+
+def test_extra_braces_around_a_placeholder(facts):
+    assert kinds(validate("Spend {{{fact:f_3a9c.spend}}}.", facts)) == [
+        ("malformed_placeholder", "{{{fact:f_3a9c.spend}}}")
+    ]
