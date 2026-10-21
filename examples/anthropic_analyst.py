@@ -26,7 +26,7 @@ facts.add("ctr", 0.0121, "percent", decimals=2, label="CTR this week", source="m
 facts.add("ctr_prev", 0.0184, "percent", decimals=2, label="CTR last week", source="meta_ads")
 facts.add("top_ad", "Summer UGC v3", "text", label="Ad set with the biggest CTR drop", source="meta_ads")
 
-question = "Why did ROAS drop last week?"
+question = "Why did ROAS drop this week?"
 system = (
     "You are a marketing analyst. Answer in a short paragraph or a few bullets.\n"
     f"This week is {this_week[0]:%b %d} to {this_week[1]:%b %d}; "
