@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "factguard"
-version = "0.1.0"
+version = "0.1.1"
 description = "Keep LLM-written text free of numbers your code didn't compute: fact placeholders, a strict validator, one retry, then drop the sentence"
 readme = "README.md"
 license = "MIT"
