@@ -27,7 +27,7 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/shivamsingh262/factguard"
 Issues = "https://github.com/shivamsingh262/factguard/issues"
-"Design notes" = "https://shivamsingh262.github.io/notes/code-computes-llm-interprets/"
+"Design notes" = "https://shivamsingh262.com/notes/code-computes-llm-interprets/"
 
 [project.scripts]
 factguard = "factguard.cli:main"
