@@ -17,13 +17,24 @@ from factguard import Facts, Retry, guard
 this_week = (date(2026, 9, 22), date(2026, 9, 28))
 last_week = (date(2026, 9, 15), date(2026, 9, 21))
 
+# Stand-in for your own queries: one row of metrics per week.
+weekly = {
+    this_week: {"spend": 61_240, "roas": 1.8, "ctr": 0.0121},
+    last_week: {"spend": 59_800, "roas": 2.4, "ctr": 0.0184},
+}
+
+# How each metric is described and formatted: key -> (kind, label, source, extra fields).
+metrics = {
+    "spend": ("money", "Ad spend", "meta_ads", {}),
+    "roas": ("ratio", "ROAS", "shopify + meta_ads", {}),
+    "ctr": ("percent", "CTR", "meta_ads", {"decimals": 2}),
+}
+
 facts = Facts(currency="INR")
-facts.add("spend", 61_240, "money", label="Ad spend this week", source="meta_ads")
-facts.add("spend_prev", 59_800, "money", label="Ad spend last week", source="meta_ads")
-facts.add("roas", 1.8, "ratio", label="ROAS this week", source="shopify + meta_ads")
-facts.add("roas_prev", 2.4, "ratio", label="ROAS last week", source="shopify + meta_ads")
-facts.add("ctr", 0.0121, "percent", decimals=2, label="CTR this week", source="meta_ads")
-facts.add("ctr_prev", 0.0184, "percent", decimals=2, label="CTR last week", source="meta_ads")
+this, prev = weekly[this_week], weekly[last_week]
+for key, (kind, label, source, extra) in metrics.items():
+    facts.add(key, this[key], kind, label=f"{label} this week", source=source, **extra)
+    facts.add(f"{key}_prev", prev[key], kind, label=f"{label} last week", source=source, **extra)
 facts.add("top_ad", "Summer UGC v3", "text", label="Ad set with the biggest CTR drop", source="meta_ads")
 
 question = "Why did ROAS drop this week?"
