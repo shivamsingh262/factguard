@@ -59,6 +59,10 @@ result.dropped   # sentences removed because they still broke the rules
 result.attempts  # 1 or 2
 ```
 
+If your numbers already sit in a dict or come back from a query, load them in one call with
+`Facts.from_records` (see [The facts file](#the-facts-file)), or loop over them with `facts.add()` as
+[`examples/anthropic_analyst.py`](examples/anthropic_analyst.py) does.
+
 ## Using it with an LLM SDK
 
 `generate` is the only part that touches your SDK. On the first call `retry` is
